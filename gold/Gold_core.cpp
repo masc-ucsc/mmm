@@ -74,25 +74,32 @@ Gold_data &Gold_core::ld_data_ref(Inst_id iid) { return find_entry(iid).ld_data;
 Gold_data &Gold_core::st_data_ref(Inst_id iid) { return find_entry(iid).st_data; }
 
 const Gold_data &Gold_core::ld_perform(Inst_id iid) {
+    // Get the entry.
     auto &ent = find_entry(iid);
 
+    // Should have allocated data fields.
+    // Before we perform, we should allocate address and size of the load instruction.
     if (!ent.ld_data.has_data()) {
         std::cout << "ERROR: ld iid:" << iid << " must have address before perform\n";
         ent.dump("ld_perform");
         return ent.ld_data;
     }
 
+    // Bring data from the memory.
     mem.ld_perform(ent.ld_data);
 
-    if (rob.back().rid != iid) {  // Not if load is the oldest in ROB
-
+    // Check if there are older local store instructions that performed.
+    // If yes, we must forward newest value to this load.
+    if (rob.back().rid != iid) {
+        // Get the pointer to this load.
         Rob_queue::reverse_iterator rob_end
             = std::find_if(rob.rbegin(), rob.rend(), [&iid](const Rob_entry &x) { return x.rid == iid; });
         assert(rob_end != rob.rend());
 
+        // Check stores older than this load.
         for (auto it = rob.rbegin(); it != rob_end; ++it) {
             assert(it->rid < iid);
-            if (it->st_data.has_data()) {
+            if (it->st_data.has_data() && it->performed) {
                 Gold_nofity::info("ld iid:{} fwd from st iid:{}", iid, it->rid);
                 ent.ld_data.update_newer(it->st_data);
             }
@@ -133,7 +140,7 @@ void Gold_core::st_locally_perform(Inst_id iid) {
 
         auto ld_data_copy = ld_perform(rob_it->rid);  // perform again
         if (ld_data_copy != rob_it->ld_data) {
-            std::cout << "WARNING: ld id:" << rob_it->rid << " performed but data chanced\n";
+            std::cout << "WARNING: ld id:" << rob_it->rid << " performed but data changed\n";
             rob_it->error = "store id:" + std::to_string(iid) + " changed value";
             ld_data_copy.dump();
             rob_it->dump("after");
@@ -153,7 +160,7 @@ void Gold_core::st_locally_merged(Inst_id iid1, Inst_id iid2) {
 
     if (rob_it1 == rob.end() || rob_it2 == rob.end()) {
         dump();
-        std::cout << "ERROR: locally merge has missign ids iid1:" << iid1 << " iid2:" << iid2 << "\n";
+        std::cout << "ERROR: locally merge has missing ids iid1:" << iid1 << " iid2:" << iid2 << "\n";
     }
 
     // Merge iid2 (younger) to iid1 (older)
@@ -169,8 +176,9 @@ void Gold_core::st_locally_merged(Inst_id iid1, Inst_id iid2) {
 
         if (rob_it2->rid == iid1) {
             assert(rob_it2 == rob_it1);
-            rob_it1->st_merge(d2);
-            return;
+            rob_it1->st_merge(d2);        
+            rob.erase(std::find_if(rob.begin(), rob.end(), [&iid2](const Rob_entry &x) { return x.rid == iid2; }));
+            break;
         }
         if (rob_it2->ld_data.has_partial_overlap(d2.st_data) && !rob_it2->performed) {
             std::cout << "FAIL: between st id:" << iid2 << "and id:" << iid1
@@ -198,7 +206,7 @@ void Gold_core::st_globally_perform(Inst_id iid) {
         return;
     }
 
-    if (iid < pnr) {
+    if (iid > pnr) {
         dump();
         std::cout << "FAIL: globally perform st id:" << iid << " but NOT safe?? (doing it, but crazy)\n";
     }
@@ -210,7 +218,7 @@ void Gold_core::st_globally_perform(Inst_id iid) {
 
     bool only_reads = true;
     for (; it != rob.end(); ++it) {
-        if (it->st_data.has_data())
+        if (it->st_data.has_data() && it->performed)
             only_reads = false;
 
         if (it->st_data.has_partial_overlap(rob_it1->st_data)) {
