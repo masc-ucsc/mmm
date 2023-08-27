@@ -181,7 +181,7 @@ class Gold_data {
         }
     }
 
-    bool operator!=(const Gold_data &d2) const {
+    bool operator==(const Gold_data &d2) const {
         if (device && d2.device) {
             return false;  // do not flag diff/error of device
         }
@@ -200,6 +200,14 @@ class Gold_data {
         }
 
         return true;
+    }
+
+    bool operator!=(const Gold_data &d2) const {
+        if (device && d2.device) {
+            return false;  // do not flag diff/error of device
+        }
+
+        return !(*this == d2);
     }
 
     Gold_data() { device = false; }

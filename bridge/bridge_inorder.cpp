@@ -1,4 +1,3 @@
-
 #include <vector>
 
 #include "Gold_core.hpp"

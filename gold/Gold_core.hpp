@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <deque>
@@ -122,7 +121,7 @@ class Gold_core {
         Gold_data   ld_data;
         Gold_data   st_data;
         Mem_op      op;
-        bool        performed;
+        bool        performed = false;
         std::string error;
     };
 
